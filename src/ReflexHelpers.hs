@@ -18,7 +18,7 @@ import qualified GHC.Generics as GHC
 import Reflex hiding (HList)
 import Reflex.Dom hiding (HList)
 
--- begin library code
+-- BEGIN library code
 
 data Tup2List :: * -> [*] -> * where
   Tup0 :: Tup2List () '[]
@@ -69,14 +69,14 @@ fromDSum (GTag t :=> I x) = to . SOP . hmap (toNPI x) $ t
 data DynamicWrapper t m a = DynamicWrapper (m (Dynamic t a))
 
 renderSumType
-  :: forall t m u. (MonadWidget t m, Generic u)
-  => (forall b. GTag u b -> Dynamic t b -> m ())
+  :: forall t m u r. (MonadWidget t m, Generic u)
+  => (forall b. GTag u b -> Dynamic t b -> m (Event t r))
   -> Dynamic t u
-  -> m (Event t ())
-renderSumType renderAnything =
-  dyn . fmap toAction . uniqDynBy sameConstructor . toNestedDyn . fmap toDSum
+  -> m (Event t r)
+renderSumType renderAnything dynState =
+   switchPromptly never =<< (dyn . fmap toAction . uniqDynBy sameConstructor . toNestedDyn . fmap toDSum) dynState
   where
-    toAction :: DSum (GTag u) (DynamicWrapper t m) -> m ()
+    toAction :: DSum (GTag u) (DynamicWrapper t m) -> m (Event t r)
     toAction (t :=> DynamicWrapper x) = x >>= renderAnything t
 
     sameConstructor :: DSum (GTag u) a -> DSum (GTag u) a -> Bool
@@ -106,6 +106,8 @@ data MyState2
 data MyState3a
 data MyState3b
 
+data UsersEventType
+
 data UsersSumType
   = First
   | Second MyState2
@@ -114,21 +116,27 @@ data UsersSumType
 
 instance Generic UsersSumType
 
-renderMyState1 :: Dynamic t () -> m ()
+renderMyState1 :: Dynamic t () -> m (Event t UsersEventType)
 renderMyState1 = undefined
 
-renderMyState2 :: Dynamic t MyState2 -> m ()
+renderMyState2 :: Dynamic t MyState2 -> m (Event t UsersEventType)
 renderMyState2 = undefined
 
-renderMyState3 :: Dynamic t (MyState3a, MyState3b) -> m ()
+renderMyState3 :: Dynamic t (MyState3a, MyState3b) -> m (Event t UsersEventType)
 renderMyState3 = undefined
 
 renderUsersSumType
   :: MonadWidget t m
   => GTag UsersSumType a
   -> Dynamic t a
-  -> m ()
+  -> m (Event t UsersEventType)
 renderUsersSumType = \case
   GTag       (Z       Tup0)    -> renderMyState1
   GTag    (S (Z       Tup1))   -> renderMyState2
   GTag (S (S (Z (TupS Tup1)))) -> renderMyState3
+
+dynState :: Dynamic t UsersSumType
+dynState = undefined
+
+render :: MonadWidget t m => m (Event t UsersEventType)
+render = renderSumType renderUsersSumType dynState
