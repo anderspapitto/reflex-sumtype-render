@@ -22,42 +22,19 @@ import Reflex.Dom hiding (HList)
 
 -- BEGIN library code
 
-data Tup2List :: * -> [*] -> * where
-  Tup0 :: Tup2List () '[]
-  Tup1 :: Tup2List x '[ x ]
-  TupS :: Tup2List r (x ': xs) -> Tup2List (a, r) (a ': x ': xs)
+data Quux i xs where Quux :: Quux (NP I xs) xs
 
-instance GEq (Tup2List t) where
-  geq Tup0     Tup0     = Just Refl
-  geq Tup1     Tup1     = Just Refl
-  geq (TupS x) (TupS y) = (\Refl -> Refl) <$> x `geq` y
-
-data List2Tup :: [*] -> * -> * where
-  List0 :: List2Tup  '[] ()
-  List1 :: List2Tup '[ x ] x
-  ListS :: List2Tup (x ': xs) r -> List2Tup (a ': x ': xs)  (a, r)
-
-l2tTot2l :: Tup2List a b -> List2Tup b a
-l2tTot2l Tup0 = List0
-l2tTot2l Tup1 = List1
-l2tTot2l (TupS x) = ListS (l2tTot2l x)
-
-instance GEq (List2Tup t) where
-  geq = undefined
-
-newtype GTag t i = GTag { unTag :: NS (Tup2List i) (Code t) }
+newtype GTag t i = GTag { unTag :: NS (Quux i) (Code t) }
 
 instance GEq (GTag t) where
-  geq (GTag (Z x)) (GTag (Z y)) =
-    let x' = l2tTot2l x
-        y' = l2tTot2l y
-    in (\Refl -> Refl) <$> x' `geq` y'
+  -- I don't know how to do this
+  geq (GTag (S x)) (GTag (S y)) = undefined
 
 toDSum :: Generic a => a -> DSum (GTag a) I
 toDSum = fromNPI (\t x -> GTag t :=> I x) . unSOP . from
   where
     fromNPI
-      :: (forall i . NS (Tup2List i) xss -> i -> r)
+      :: (forall i . NS (Quux i) xss -> i -> r)
       -> NS (NP I) xss
       -> r
     fromNPI k = \case
@@ -65,22 +42,13 @@ toDSum = fromNPI (\t x -> GTag t :=> I x) . unSOP . from
       (S q) ->    fromNPI (k . S) q
 
     conFromNPI
-      :: (forall a. Tup2List a xs -> a -> r)
+      :: (forall a. Quux a xs -> a -> r)
       -> NP I xs
       -> r
     conFromNPI k = \case
-      Nil            -> k Tup0 ()
-      I x :* Nil     -> k Tup1 x
-      I x :* y :* ys -> conFromNPI (\t v -> k (TupS t) (x, v)) (y :* ys)
-
--- fromDSum :: Generic a => DSum (GTag a) I -> a
--- fromDSum (GTag t :=> I x) = to . SOP . hmap (toNPI x) $ t
---   where
---     toNPI :: a -> Tup2List a xs -> NP I xs
---     toNPI x = \case
---       Tup0   ->                           Nil
---       Tup1   ->                    I x :* Nil
---       TupS t -> let (y, ys) = x in I y :* toNPI ys t
+      Nil        -> k Quux Nil
+      I x :* Nil -> k Quux (I x :* Nil)
+      I x :* xs  -> conFromNPI (\Quux _ -> k Quux (I x :* xs)) xs
 
 data DynamicWrapper t m a = DynamicWrapper (m (Dynamic t a))
 
@@ -118,9 +86,7 @@ renderSumType renderAnything dynState = do
       -> Dynamic t (DSum (GTag u) I)
       -> Event t a
     eventsForTag tag = fmapMaybe tagToJust . updated
-      where tagToJust (t :=> I x) = case t `geq` tag of
-              Just Refl -> Just x
-              Nothing   -> Nothing
+      where tagToJust (t :=> I x) = (\Refl -> x) <$> t `geq` tag
 
 -- BEGIN example user-provided section
 
@@ -139,14 +105,29 @@ data UsersSumType
 
 instance Generic UsersSumType
 
-renderMyState1 :: Dynamic t () -> m (Event t UsersEventType)
-renderMyState1 = undefined
+renderMyState1
+  :: forall t m. MonadWidget t m
+  => Dynamic t (NP I '[])
+  -> m (Event t UsersEventType)
+renderMyState1 d = undefined
 
-renderMyState2 :: Dynamic t MyState2 -> m (Event t UsersEventType)
-renderMyState2 = undefined
+renderMyState2
+  :: forall t m. MonadWidget t m
+  => Dynamic t (NP I '[MyState2])
+  -> m (Event t UsersEventType)
+renderMyState2 d =
+  let dynMyState2 = ((\(I x :* Nil) -> x) <$> d) :: Dynamic t MyState2
+  in undefined
 
-renderMyState3 :: Dynamic t (MyState3a, (MyState3b, MyState3c)) -> m (Event t UsersEventType)
-renderMyState3 = undefined
+renderMyState3
+  :: forall t m. MonadWidget t m
+  => Dynamic t (NP I '[MyState3a, MyState3b, MyState3c])
+  -> m (Event t UsersEventType)
+renderMyState3 d =
+  let dynA = ((\(I a :* I b :* I c :* Nil) -> a) <$> d) :: Dynamic t MyState3a
+      dynB = ((\(I a :* I b :* I c :* Nil) -> b) <$> d) :: Dynamic t MyState3b
+      dynC = ((\(I a :* I b :* I c :* Nil) -> c) <$> d) :: Dynamic t MyState3c
+  in undefined
 
 renderUsersSumType
   :: MonadWidget t m
@@ -154,9 +135,9 @@ renderUsersSumType
   -> Dynamic t a
   -> m (Event t UsersEventType)
 renderUsersSumType = \case
-  GTag       (Z             Tup0)     -> renderMyState1
-  GTag    (S (Z             Tup1))    -> renderMyState2
-  GTag (S (S (Z (TupS (TupS Tup1))))) -> renderMyState3
+  GTag       (Z Quux)   -> renderMyState1
+  GTag    (S (Z Quux))  -> renderMyState2
+  GTag (S (S (Z Quux))) -> renderMyState3
 
 dynState :: Dynamic t UsersSumType
 dynState = undefined
