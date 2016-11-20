@@ -30,14 +30,28 @@ data Tup2List :: * -> [*] -> * where
 instance GEq (Tup2List t) where
   geq Tup0     Tup0     = Just Refl
   geq Tup1     Tup1     = Just Refl
-  geq (TupS x) (TupS y) = case x `geq` y of
-    Just Refl -> Just Refl
-    Nothing   -> Nothing
+  geq (TupS x) (TupS y) = (\Refl -> Refl) <$> x `geq` y
+
+data List2Tup :: [*] -> * -> * where
+  List0 :: List2Tup  '[] ()
+  List1 :: List2Tup '[ x ] x
+  ListS :: List2Tup (x ': xs) r -> List2Tup (a ': x ': xs)  (a, r)
+
+l2tTot2l :: Tup2List a b -> List2Tup b a
+l2tTot2l Tup0 = List0
+l2tTot2l Tup1 = List1
+l2tTot2l (TupS x) = ListS (l2tTot2l x)
+
+instance GEq (List2Tup t) where
+  geq = undefined
 
 newtype GTag t i = GTag { unTag :: NS (Tup2List i) (Code t) }
 
 instance GEq (GTag t) where
-  geq x y = undefined
+  geq (GTag (Z x)) (GTag (Z y)) =
+    let x' = l2tTot2l x
+        y' = l2tTot2l y
+    in (\Refl -> Refl) <$> x' `geq` y'
 
 toDSum :: Generic a => a -> DSum (GTag a) I
 toDSum = fromNPI (\t x -> GTag t :=> I x) . unSOP . from
@@ -47,8 +61,8 @@ toDSum = fromNPI (\t x -> GTag t :=> I x) . unSOP . from
       -> NS (NP I) xss
       -> r
     fromNPI k = \case
-      (Z x) -> conFromNPI  (k . Z) x
-      (S q) -> fromNPI (k . S) q
+      (Z x) -> conFromNPI (k . Z) x
+      (S q) ->    fromNPI (k . S) q
 
     conFromNPI
       :: (forall a. Tup2List a xs -> a -> r)
@@ -113,13 +127,14 @@ renderSumType renderAnything dynState = do
 data MyState2
 data MyState3a
 data MyState3b
+data MyState3c
 
 data UsersEventType
 
 data UsersSumType
   = First
   | Second MyState2
-  | Third MyState3a MyState3b
+  | Third MyState3a MyState3b MyState3c
   deriving GHC.Generic
 
 instance Generic UsersSumType
@@ -130,7 +145,7 @@ renderMyState1 = undefined
 renderMyState2 :: Dynamic t MyState2 -> m (Event t UsersEventType)
 renderMyState2 = undefined
 
-renderMyState3 :: Dynamic t (MyState3a, MyState3b) -> m (Event t UsersEventType)
+renderMyState3 :: Dynamic t (MyState3a, (MyState3b, MyState3c)) -> m (Event t UsersEventType)
 renderMyState3 = undefined
 
 renderUsersSumType
@@ -139,9 +154,9 @@ renderUsersSumType
   -> Dynamic t a
   -> m (Event t UsersEventType)
 renderUsersSumType = \case
-  GTag       (Z       Tup0)    -> renderMyState1
-  GTag    (S (Z       Tup1))   -> renderMyState2
-  GTag (S (S (Z (TupS Tup1)))) -> renderMyState3
+  GTag       (Z             Tup0)     -> renderMyState1
+  GTag    (S (Z             Tup1))    -> renderMyState2
+  GTag (S (S (Z (TupS (TupS Tup1))))) -> renderMyState3
 
 dynState :: Dynamic t UsersSumType
 dynState = undefined
