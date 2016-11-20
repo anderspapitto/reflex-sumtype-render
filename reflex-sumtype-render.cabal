@@ -21,14 +21,3 @@ library
                      , reflex
                      , reflex-dom
                      , text
-  default-extensions:  DeriveGeneric
-                     , FlexibleInstances
-                     , FunctionalDependencies
-                     , GADTs
-                     , LambdaCase
-                     , MultiParamTypeClasses
-                     , OverloadedStrings
-                     , RecursiveDo
-                     , ScopedTypeVariables
-                     , StrictData
-                     , TemplateHaskell

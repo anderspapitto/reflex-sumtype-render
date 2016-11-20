@@ -1,15 +1,17 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
 
 module ReflexHelpers where
 
-import Control.Monad.Identity
 import Data.Dependent.Sum
 import Data.GADT.Compare
 import Data.Maybe (isJust)
-import Data.Proxy
 import Data.Type.Equality
 
 import Generics.SOP
@@ -28,14 +30,14 @@ data Tup2List :: * -> [*] -> * where
 instance GEq (Tup2List t) where
   geq Tup0     Tup0     = Just Refl
   geq Tup1     Tup1     = Just Refl
-  geq (TupS x) (TupS y) = undefined
+  geq (TupS x) (TupS y) = case x `geq` y of
+    Just Refl -> Just Refl
+    Nothing   -> Nothing
 
 newtype GTag t i = GTag { unTag :: NS (Tup2List i) (Code t) }
 
 instance GEq (GTag t) where
-  geq (GTag (Z x)) (GTag (Z y)) = undefined -- x `geq` y
-
-type GTagVal t = DSum (GTag t) I
+  geq x y = undefined
 
 toDSum :: Generic a => a -> DSum (GTag a) I
 toDSum = fromNPI (\t x -> GTag t :=> I x) . unSOP . from
@@ -57,14 +59,14 @@ toDSum = fromNPI (\t x -> GTag t :=> I x) . unSOP . from
       I x :* Nil     -> k Tup1 x
       I x :* y :* ys -> conFromNPI (\t v -> k (TupS t) (x, v)) (y :* ys)
 
-fromDSum :: Generic a => DSum (GTag a) I -> a
-fromDSum (GTag t :=> I x) = to . SOP . hmap (toNPI x) $ t
-  where
-    toNPI :: a -> Tup2List a xs -> NP I xs
-    toNPI x = \case
-      Tup0   ->                           Nil
-      Tup1   ->                    I x :* Nil
-      TupS t -> let (y, ys) = x in I y :* toNPI ys t
+-- fromDSum :: Generic a => DSum (GTag a) I -> a
+-- fromDSum (GTag t :=> I x) = to . SOP . hmap (toNPI x) $ t
+--   where
+--     toNPI :: a -> Tup2List a xs -> NP I xs
+--     toNPI x = \case
+--       Tup0   ->                           Nil
+--       Tup1   ->                    I x :* Nil
+--       TupS t -> let (y, ys) = x in I y :* toNPI ys t
 
 data DynamicWrapper t m a = DynamicWrapper (m (Dynamic t a))
 
@@ -73,8 +75,14 @@ renderSumType
   => (forall b. GTag u b -> Dynamic t b -> m (Event t r))
   -> Dynamic t u
   -> m (Event t r)
-renderSumType renderAnything dynState =
-   switchPromptly never =<< (dyn . fmap toAction . uniqDynBy sameConstructor . toNestedDyn . fmap toDSum) dynState
+renderSumType renderAnything dynState = do
+  switchPromptly never =<<
+    ( dyn
+      . fmap toAction
+      . uniqDynBy sameConstructor
+      . toNestedDyn
+      . fmap toDSum
+    ) dynState
   where
     toAction :: DSum (GTag u) (DynamicWrapper t m) -> m (Event t r)
     toAction (t :=> DynamicWrapper x) = x >>= renderAnything t
