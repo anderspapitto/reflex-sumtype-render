@@ -30,13 +30,14 @@ instance GEq (GTag_ t) where
   geq (GTag (S x))    (GTag (S y))    = GTag x `geq` GTag y
   geq _               _               = Nothing
 
-toDSum :: forall t . Generic t => t -> DSum (GTag t) (NP I)
-toDSum = foo . unSOP . from
+toDSum :: Generic t => t -> DSum (GTag t) (NP I)
+toDSum = foo (\f b -> GTag f :=> b) . unSOP . from
   where
-    foo :: ()
-        => NS (NP I) (Code t)
-        -> DSum (GTag t) (NP I)
-    foo = undefined
+    foo :: (forall a . (NS ((:~:) a) xs) -> NP I a -> r)
+        -> NS (NP I) xs
+        -> r
+    foo k (Z x) =     (k . Z) Refl x
+    foo k (S w) = foo (k . S)      w
 
 data DynamicWrapper t m a = DynamicWrapper (m (Dynamic t (NP I a)))
 
