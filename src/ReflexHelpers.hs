@@ -1,60 +1,49 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE Haskell2010
+, DataKinds
+, DeriveGeneric
+, GADTs
+, KindSignatures
+, LambdaCase
+, RankNTypes
+, ScopedTypeVariables
+, TypeOperators
+#-}
 
 module ReflexHelpers where
 
 import Data.Dependent.Sum
 import Data.GADT.Compare
 import Data.Maybe (isJust)
-import Data.Type.Equality
 
 import Generics.SOP
 import qualified GHC.Generics as GHC
 
-import Reflex hiding (HList)
-import Reflex.Dom hiding (HList)
+import Reflex hiding (tag)
+import Reflex.Dom hiding (tag)
 
 -- BEGIN library code
 
-data Quux i xs where Quux :: Quux (NP I xs) xs
+type GTag t = GTag_ (Code t)
+newtype GTag_ t (as :: [*]) = GTag (NS ((:~:) as) t)
 
-newtype GTag t i = GTag { unTag :: NS (Quux i) (Code t) }
+instance GEq (GTag_ t) where
+  geq (GTag (Z Refl)) (GTag (Z Refl)) = Just Refl
+  geq (GTag (S x))    (GTag (S y))    = GTag x `geq` GTag y
+  geq _               _               = Nothing
 
-instance GEq (GTag t) where
-  -- I don't know how to do this
-  geq (GTag (S x)) (GTag (S y)) = undefined
-
-toDSum :: Generic a => a -> DSum (GTag a) I
-toDSum = fromNPI (\t x -> GTag t :=> I x) . unSOP . from
+toDSum :: forall t . Generic t => t -> DSum (GTag t) (NP I)
+toDSum = foo . unSOP . from
   where
-    fromNPI
-      :: (forall i . NS (Quux i) xss -> i -> r)
-      -> NS (NP I) xss
-      -> r
-    fromNPI k = \case
-      (Z x) -> conFromNPI (k . Z) x
-      (S q) ->    fromNPI (k . S) q
+    foo :: ()
+        => NS (NP I) (Code t)
+        -> DSum (GTag t) (NP I)
+    foo = undefined
 
-    conFromNPI
-      :: (forall a. Quux a xs -> a -> r)
-      -> NP I xs
-      -> r
-    conFromNPI k = \case
-      Nil        -> k Quux Nil
-      I x :* Nil -> k Quux (I x :* Nil)
-      I x :* xs  -> conFromNPI (\Quux _ -> k Quux (I x :* xs)) xs
-
-data DynamicWrapper t m a = DynamicWrapper (m (Dynamic t a))
+data DynamicWrapper t m a = DynamicWrapper (m (Dynamic t (NP I a)))
 
 renderSumType
   :: forall t m u r. (MonadWidget t m, Generic u)
-  => (forall b. GTag u b -> Dynamic t b -> m (Event t r))
+  => (forall b. GTag u b -> Dynamic t (NP I b) -> m (Event t r))
   -> Dynamic t u
   -> m (Event t r)
 renderSumType renderAnything dynState = do
@@ -73,20 +62,20 @@ renderSumType renderAnything dynState = do
     sameConstructor (t1 :=> _) (t2 :=> _) = isJust (t1 `geq` t2)
 
     toNestedDyn
-      :: Dynamic t (DSum (GTag u) I)
+      :: Dynamic t (DSum (GTag u) (NP I))
       -> Dynamic t (DSum (GTag u) (DynamicWrapper t m))
     toNestedDyn d = makeNestedDyn <$> d
       where
-        makeNestedDyn :: DSum (GTag u) I -> DSum (GTag u) (DynamicWrapper t m)
-        makeNestedDyn (t :=> I x) =
+        makeNestedDyn :: DSum (GTag u) (NP I) -> DSum (GTag u) (DynamicWrapper t m)
+        makeNestedDyn (t :=> x) =
           t :=> DynamicWrapper (holdDyn x (eventsForTag t d))
 
     eventsForTag
       :: GTag u a
-      -> Dynamic t (DSum (GTag u) I)
-      -> Event t a
+      -> Dynamic t (DSum (GTag u) (NP I))
+      -> Event t (NP I a)
     eventsForTag tag = fmapMaybe tagToJust . updated
-      where tagToJust (t :=> I x) = (\Refl -> x) <$> t `geq` tag
+      where tagToJust (t :=> x) = (\Refl -> x) <$> t `geq` tag
 
 -- BEGIN example user-provided section
 
@@ -95,8 +84,6 @@ data MyState3a
 data MyState3b
 data MyState3c
 
-data UsersEventType
-
 data UsersSumType
   = First
   | Second MyState2
@@ -104,6 +91,8 @@ data UsersSumType
   deriving GHC.Generic
 
 instance Generic UsersSumType
+
+data UsersEventType
 
 renderMyState1
   :: forall t m. MonadWidget t m
@@ -116,7 +105,7 @@ renderMyState2
   => Dynamic t (NP I '[MyState2])
   -> m (Event t UsersEventType)
 renderMyState2 d =
-  let dynMyState2 = ((\(I x :* Nil) -> x) <$> d) :: Dynamic t MyState2
+  let dynState = ((\(I x :* Nil) -> x) <$> d)
   in undefined
 
 renderMyState3
@@ -132,15 +121,16 @@ renderMyState3 d =
 renderUsersSumType
   :: MonadWidget t m
   => GTag UsersSumType a
-  -> Dynamic t a
+  -> Dynamic t (NP I a)
   -> m (Event t UsersEventType)
 renderUsersSumType = \case
-  GTag       (Z Quux)   -> renderMyState1
-  GTag    (S (Z Quux))  -> renderMyState2
-  GTag (S (S (Z Quux))) -> renderMyState3
+  GTag       (Z Refl)   -> renderMyState1
+  GTag    (S (Z Refl))  -> renderMyState2
+  GTag (S (S (Z Refl))) -> renderMyState3
+  _                     -> error "wish I could rule this out statically"
 
-dynState :: Dynamic t UsersSumType
-dynState = undefined
+g_dynState :: Dynamic t UsersSumType
+g_dynState = undefined
 
 render :: MonadWidget t m => m (Event t UsersEventType)
-render = renderSumType renderUsersSumType dynState
+render = renderSumType renderUsersSumType g_dynState
