@@ -46,7 +46,7 @@ renderSumType
   => (forall b. GTag u b -> Dynamic t (NP I b) -> m (Event t r))
   -> Dynamic t u
   -> m (Event t r)
-renderSumType renderAnything dynState = do
+renderSumType renderAnything dynState =
   switchPromptly never =<<
     ( dyn
       . fmap toAction
@@ -105,7 +105,7 @@ renderMyState2
   => Dynamic t (NP I '[MyState2])
   -> m (Event t UsersEventType)
 renderMyState2 d =
-  let dynState = ((\(I x :* Nil) -> x) <$> d)
+  let dynState = ((\(I x :* Nil) -> x) <$> d) :: Dynamic t MyState2
   in undefined
 
 renderMyState3
