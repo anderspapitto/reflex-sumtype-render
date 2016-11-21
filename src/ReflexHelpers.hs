@@ -23,7 +23,7 @@ import Reflex.Dom hiding (tag)
 -- BEGIN library code
 
 type GTag t = GTag_ (Code t)
-newtype GTag_ t (as :: [*]) = GTag (NS ((:~:) as) t)
+newtype GTag_ t (xs :: [*]) = GTag (NS ((:~:) xs) t)
 
 instance GEq (GTag_ t) where
   geq (GTag (Z Refl)) (GTag (Z Refl)) = Just Refl
@@ -39,7 +39,7 @@ toDSum = foo (\f b -> GTag f :=> b) . unSOP . from
     foo k (Z x) =     (k . Z) Refl x
     foo k (S w) = foo (k . S)      w
 
-data DynamicWrapper t m a = DynamicWrapper (m (Dynamic t (NP I a)))
+data WrapDyn t m a = WrapDyn (m (Dynamic t (NP I a)))
 
 renderSumType
   :: forall t m u r. (MonadWidget t m, Generic u)
@@ -55,20 +55,20 @@ renderSumType renderAnything dynState = do
       . fmap toDSum
     ) dynState
   where
-    toAction :: DSum (GTag u) (DynamicWrapper t m) -> m (Event t r)
-    toAction (t :=> DynamicWrapper x) = x >>= renderAnything t
+    toAction :: DSum (GTag u) (WrapDyn t m) -> m (Event t r)
+    toAction (t :=> WrapDyn x) = x >>= renderAnything t
 
     sameConstructor :: DSum (GTag u) a -> DSum (GTag u) a -> Bool
     sameConstructor (t1 :=> _) (t2 :=> _) = isJust (t1 `geq` t2)
 
     toNestedDyn
       :: Dynamic t (DSum (GTag u) (NP I))
-      -> Dynamic t (DSum (GTag u) (DynamicWrapper t m))
+      -> Dynamic t (DSum (GTag u) (WrapDyn t m))
     toNestedDyn d = makeNestedDyn <$> d
       where
-        makeNestedDyn :: DSum (GTag u) (NP I) -> DSum (GTag u) (DynamicWrapper t m)
+        makeNestedDyn :: DSum (GTag u) (NP I) -> DSum (GTag u) (WrapDyn t m)
         makeNestedDyn (t :=> x) =
-          t :=> DynamicWrapper (holdDyn x (eventsForTag t d))
+          t :=> WrapDyn (holdDyn x (eventsForTag t d))
 
     eventsForTag
       :: GTag u a
@@ -135,10 +135,10 @@ g_dynState = undefined
 render :: MonadWidget t m => m (Event t UsersEventType)
 render = renderSumType renderUsersSumType g_dynState
 
-{-# Potential improvements
+{- Potential improvements
 
 - use `fan` to improve efficiency
 - completely remove the need for the end user to use generics-sop types
 - break out a 'core' which is pure Reflex, and a Reflex-Dom shell
 
-#-}
+-}
