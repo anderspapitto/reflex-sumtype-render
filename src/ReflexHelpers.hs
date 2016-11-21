@@ -14,7 +14,6 @@ module ReflexHelpers where
 import Data.Dependent.Sum
 import Data.GADT.Compare
 import Data.Maybe (isJust)
-
 import Generics.SOP
 import qualified GHC.Generics as GHC
 
@@ -127,10 +126,18 @@ renderUsersSumType = \case
   GTag       (Z Refl)   -> renderMyState1
   GTag    (S (Z Refl))  -> renderMyState2
   GTag (S (S (Z Refl))) -> renderMyState3
-  _                     -> error "wish I could rule this out statically"
+  _                     -> error "I wish I could tell GHC this is impossible"
 
 g_dynState :: Dynamic t UsersSumType
 g_dynState = undefined
 
 render :: MonadWidget t m => m (Event t UsersEventType)
 render = renderSumType renderUsersSumType g_dynState
+
+{-# Potential improvements
+
+- use `fan` to improve efficiency
+- completely remove the need for the end user to use generics-sop types
+- break out a 'core' which is pure Reflex, and a Reflex-Dom shell
+
+#-}
